@@ -5,13 +5,18 @@ import uuid
 from dotenv import find_dotenv, load_dotenv
 import streamlit as st
 
-# LangChain Imports
-from langchain_community.tools import DuckDuckGoSearchRun
+# LangChain & Tavily Imports
+from langchain_community.tools import TavilySearchResults
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 # Load local environment variables if available
 load_dotenv(find_dotenv(), override=True)
+
+# -----------------------------------------------------------------------------
+# HARDCODED TAVILY API KEY (No user prompt required)
+# -----------------------------------------------------------------------------
+DEFAULT_TAVILY_KEY = "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"
 
 # -----------------------------------------------------------------------------
 # 1. PAGE & LIGHT GLASSMORPHISM STYLING
@@ -294,7 +299,6 @@ if not st.session_state.saved_threads or st.session_state.current_thread_id is N
 # 4. STAGE 1: WELCOME LANDING PAGE & KEY VALIDATION
 # -----------------------------------------------------------------------------
 if not st.session_state.authenticated:
-    # Completely eliminate phantom bottom elements on Welcome Page
     st.markdown("""
         <style>
             [data-testid="stBottom"], .stBottom, [data-testid="stChatInput"] {
@@ -314,7 +318,7 @@ if not st.session_state.authenticated:
         <div class="feature-card">
             <div class="feature-icon">🌐</div>
             <div class="feature-title">Live Web Intelligence</div>
-            <div class="feature-desc">Fetches real-world data and online research dynamically via DuckDuckGo.</div>
+            <div class="feature-desc">Fetches real-world data and online research dynamically via Tavily API.</div>
         </div>
         """, unsafe_allow_html=True)
     with c2:
@@ -342,14 +346,13 @@ if not st.session_state.authenticated:
         </div>
         """, unsafe_allow_html=True)
 
-    st.write("")  # Standard clean spacing instead of raw HTML line breaks
+    st.write("")
 
     _, center_col, _ = st.columns([1, 2, 1])
     with center_col:
         st.markdown('<div class="glass-card">', unsafe_allow_html=True)
         st.subheader("🔑 Activate Workspace Access")
         
-        # Form for instant Enter-key submit
         with st.form(key="key_form", clear_on_submit=False):
             input_key = st.text_input(
                 "Enter OpenAI API Key:",
@@ -408,7 +411,7 @@ else:
 
         st.caption("ASSISTANT CONFIGURATION")
         enable_search = st.toggle("🌐 Enable Web Search", value=False)
-        
+
         user_system_input = st.text_input(
             "System Role:",
             value=current_thread.get("custom_system_role", ""),
@@ -524,7 +527,6 @@ else:
                 with st.chat_message("ai"):
                     st.write(msg.content)
 
-    # Chat Input ONLY rendered inside workspace stage
     user_input = st.chat_input("Ask anything...")
     if user_input:
         prompt_to_send = user_input
@@ -549,8 +551,12 @@ else:
                 with st.spinner("⚡ Processing your request with Nexus Engine..."):
                     if enable_search:
                         try:
-                            search = DuckDuckGoSearchRun()
-                            search_results = search.run(prompt_to_send)
+                            # Using predefined Tavily API Key directly
+                            tavily_tool = TavilySearchResults(
+                                max_results=3, 
+                                tavily_api_key=DEFAULT_TAVILY_KEY
+                            )
+                            search_results = tavily_tool.run(prompt_to_send)
                             search_context = f"\n\n[Real-Time Internet Search Results]:\n{search_results}"
                             messages_to_send[0] = SystemMessage(
                                 content=effective_system_role + search_context
