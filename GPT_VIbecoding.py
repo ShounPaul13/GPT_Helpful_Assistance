@@ -14,9 +14,10 @@ from langchain_openai import ChatOpenAI
 load_dotenv(find_dotenv(), override=True)
 
 # -----------------------------------------------------------------------------
-# HARDCODED TAVILY API KEY (No user prompt required)
+# CONFIGURATIONS
 # -----------------------------------------------------------------------------
 DEFAULT_TAVILY_KEY = "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"
+SESSION_TIMEOUT_SECONDS = 30 * 60  # 30 Minutes Session Timeout
 
 # -----------------------------------------------------------------------------
 # 1. PAGE & LIGHT GLASSMORPHISM STYLING
@@ -275,13 +276,30 @@ def create_new_thread():
     return new_id
 
 # -----------------------------------------------------------------------------
-# 3. SESSION STATE INITIALIZATION
+# 3. SECURE SESSION IN-MEMORY & 30 MIN TIMEOUT LOGIC
 # -----------------------------------------------------------------------------
+# Clean URL parameters to avoid any security exposure
+if st.query_params:
+    st.query_params.clear()
+
+current_time = time.time()
+
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 
+if "login_timestamp" not in st.session_state:
+    st.session_state.login_timestamp = 0
+
 if "openai_api_key" not in st.session_state:
     st.session_state.openai_api_key = ""
+
+# Auto Timeout Check (30 minutes expiry)
+if st.session_state.authenticated and st.session_state.login_timestamp > 0:
+    if current_time - st.session_state.login_timestamp > SESSION_TIMEOUT_SECONDS:
+        st.session_state.authenticated = False
+        st.session_state.openai_api_key = ""
+        st.session_state.login_timestamp = 0
+        st.warning("⏱️ Session timed out after 30 minutes. Please enter your API key again.")
 
 if "saved_threads" not in st.session_state:
     st.session_state.saved_threads = load_chats_from_file()
@@ -363,19 +381,21 @@ if not st.session_state.authenticated:
             submit_btn = st.form_submit_button("Launch Assistant Workspace ✨", use_container_width=True)
 
         if submit_btn:
-            if input_key.startswith("sk-") and len(input_key.strip()) > 20:
+            clean_key = input_key.strip()
+            if clean_key.startswith("sk-") and len(clean_key) > 20:
                 try:
                     with st.spinner("Validating API Key credentials..."):
-                        test_llm = ChatOpenAI(model_name="gpt-4o-mini", api_key=input_key.strip(), max_tokens=5)
+                        test_llm = ChatOpenAI(model_name="gpt-4o-mini", api_key=clean_key, max_tokens=5)
                         test_llm.invoke("test")
                     
-                    st.session_state.openai_api_key = input_key.strip()
+                    st.session_state.openai_api_key = clean_key
                     st.session_state.authenticated = True
-                    create_new_thread()
+                    st.session_state.login_timestamp = time.time()
                     
+                    create_new_thread()
                     st.toast("🎉 API Key Authenticated Successfully!")
                     st.success("✨ Welcome to Nexus AI workspace!\n\n> *\"AI is not about replacing human intelligence, but amplifying human potential.\"*")
-                    time.sleep(1)
+                    time.sleep(0.5)
                     st.rerun()
                 except Exception as e:
                     st.markdown("""
@@ -469,9 +489,11 @@ else:
 
         st.divider()
 
+        # Manual Logout clears session state
         if st.button("🔴 Logout / Reset Key", use_container_width=True):
             st.session_state.authenticated = False
             st.session_state.openai_api_key = ""
+            st.session_state.login_timestamp = 0
             st.rerun()
 
     raw_messages = current_thread.get("messages", [])
@@ -551,7 +573,6 @@ else:
                 with st.spinner("⚡ Processing your request with Nexus Engine..."):
                     if enable_search:
                         try:
-                            # Using predefined Tavily API Key directly
                             tavily_tool = TavilySearchResults(
                                 max_results=3, 
                                 tavily_api_key=DEFAULT_TAVILY_KEY
